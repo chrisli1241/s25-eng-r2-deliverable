@@ -218,7 +218,7 @@ export default function AddSpeciesDialog({ userId }: { userId: string }) {
                             key={suggestion}
                             className={`p-2 ${
                               suggestion === "No results found"
-                                ? "cursor-default bg-primary/90"
+                                ? "cursor-default text-accent-foreground"
                                 : "cursor-pointer hover:bg-primary/90"
                             }`}
                             onClick={() => {
