@@ -1,6 +1,5 @@
 "use client";
 
-import { Icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,12 +18,9 @@ import { toast } from "@/components/ui/use-toast";
 import { createBrowserSupabaseClient } from "@/lib/client-utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
-import { useState, type BaseSyntheticEvent } from "react";
+import { useEffect, useState, type BaseSyntheticEvent } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-
-// We use zod (z) to define a schema for the "Add species" form.
-// zod handles validation of the input values with methods like .string(), .nullable(). It also processes the form inputs with .transform() before the inputs are sent to the database.
 
 // Define kingdom enum for use in Zod schema and displaying dropdown options in the form
 const kingdoms = z.enum(["Animalia", "Plantae", "Fungi", "Protista", "Archaea", "Bacteria"]);
@@ -58,13 +54,6 @@ const speciesSchema = z.object({
 
 type FormData = z.infer<typeof speciesSchema>;
 
-// Default values for the form fields.
-/* Because the react-hook-form (RHF) used here is a controlled form (not an uncontrolled form),
-fields that are nullable/not required should explicitly be set to `null` by default.
-Otherwise, they will be `undefined` by default, which will raise warnings because `undefined` conflicts with controlled components.
-All form fields should be set to non-undefined default values.
-Read more here: https://legacy.react-hook-form.com/api/useform/
-*/
 const defaultValues: Partial<FormData> = {
   scientific_name: "",
   common_name: null,
@@ -74,85 +63,66 @@ const defaultValues: Partial<FormData> = {
   description: null,
 };
 
-interface WikipediaSearchResponse {
-  pages: { title: string }[];
-}
-
-interface WikipediaPageSummary {
-  titles?: { display?: string };
-  extract?: string;
-  thumbnail?: { source?: string };
-}
-
-export default function AddSpeciesDialog({ userId }: { userId: string }) {
+export default function EditSpeciesDialog({ speciesId }: { speciesId: number }) {
   const router = useRouter();
-
-  // Control open/closed state of the dialog
   const [open, setOpen] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
 
-  // Instantiate form functionality with React Hook Form, passing in the Zod schema (for validation) and default values
   const form = useForm<FormData>({
     resolver: zodResolver(speciesSchema),
     defaultValues,
     mode: "onChange",
   });
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [, setSpeciesData] = useState({
-    image: "",
-    description: "",
-  });
-  const [searchQuery, setSearchQuery] = useState<string>("");
 
-  const fetchSuggestions = async (query: string) => {
-    if (!query) {
-      setSuggestions([]);
-      return;
-    }
+  // Fetch existing species data when the dialog opens
+  useEffect(() => {
+    const fetchSpeciesData = async () => {
+      if (open) {
+        setLoading(true);
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase.from("species").select("*").eq("id", speciesId).single();
 
-    try {
-      const response = await fetch(`https://en.wikipedia.org/w/rest.php/v1/search/title?q=${query}&limit=5`);
-      const data: WikipediaSearchResponse = (await response.json()) as WikipediaSearchResponse;
+        if (error) {
+          toast({
+            title: "Error fetching species data",
+            description: error.message,
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
 
-      if (data.pages.length > 0) {
-        setSuggestions(data.pages.map((page) => page.title));
-      } else {
-        setSuggestions(["No results found"]); // Set a special message if no results
+        if (data) {
+          // Reset form with existing data
+          form.reset({
+            scientific_name: data.scientific_name,
+            common_name: data.common_name,
+            kingdom: data.kingdom,
+            total_population: data.total_population,
+            image: data.image,
+            description: data.description,
+          });
+        }
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Error fetching suggestions:", error);
-    }
-  };
+    };
 
-  const fetchSpeciesDetails = async (title: string) => {
-    try {
-      const response = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
-      const data: WikipediaPageSummary = (await response.json()) as WikipediaPageSummary;
-
-      setSpeciesData({
-        image: data.thumbnail?.source ?? "",
-        description: data.extract ?? "",
-      });
-      form.setValue("image", data.thumbnail?.source ?? "");
-      form.setValue("description", data.extract ?? "");
-    } catch (error) {
-      console.error("Error fetching species details:", error);
-    }
-  };
+    void fetchSpeciesData();
+  }, [open, speciesId, form]);
 
   const onSubmit = async (input: FormData) => {
-    // The `input` prop contains data that has already been processed by zod. We can now use it in a supabase query
     const supabase = createBrowserSupabaseClient();
-    const { error } = await supabase.from("species").insert([
-      {
-        author: userId,
+    const { error } = await supabase
+      .from("species")
+      .update({
         common_name: input.common_name,
         description: input.description,
         kingdom: input.kingdom,
         scientific_name: input.scientific_name,
         total_population: input.total_population,
         image: input.image,
-      },
-    ]);
+      })
+      .eq("id", speciesId);
 
     // Catch and report errors from Supabase and exit the onSubmit function with an early 'return' if an error occurred.
     if (error) {
@@ -176,65 +146,26 @@ export default function AddSpeciesDialog({ userId }: { userId: string }) {
     router.refresh();
 
     return toast({
-      title: "New species added!",
-      description: "Successfully added " + input.scientific_name + ".",
+      title: "Species edited!",
+      description: "Successfully edited " + input.scientific_name + ".",
     });
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="secondary">
-          <Icons.add className="mr-3 h-5 w-5" />
-          Add Species
-        </Button>
+        <Button className="mt-3 w-full">Edit Information</Button>
       </DialogTrigger>
       <DialogContent className="max-h-screen overflow-y-auto sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>Add Species</DialogTitle>
+          <DialogTitle>Edit Species</DialogTitle>
           <DialogDescription>
-            Add a new species here. Click &quot;Add Species&quot; below when you&apos;re done.
+            Edit existing species here. Click &quot; Edit Species &quot; below when you have finished editing.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={(e: BaseSyntheticEvent) => void form.handleSubmit(onSubmit)(e)}>
             <div className="grid w-full items-center gap-4">
-              <FormItem>
-                <FormLabel>Search Species Name</FormLabel>
-                <FormControl>
-                  <div className="relative">
-                    <Input
-                      value={searchQuery}
-                      placeholder="Search species..."
-                      onChange={(e) => {
-                        void setSearchQuery(e.target.value);
-                        void fetchSuggestions(e.target.value);
-                      }}
-                    />
-                    {suggestions.length > 0 && (
-                      <ul className="absolute left-0 right-0 z-10 rounded-md border bg-secondary/100">
-                        {suggestions.map((suggestion) => (
-                          <li
-                            key={suggestion}
-                            className={`p-2 ${
-                              suggestion === "No results found"
-                                ? "cursor-default bg-primary/90"
-                                : "cursor-pointer hover:bg-primary/90"
-                            }`}
-                            onClick={() => {
-                              void fetchSpeciesDetails(suggestion);
-                              setSuggestions([]); // Hide suggestions
-                            }}
-                          >
-                            {suggestion}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
               <FormField
                 control={form.control}
                 name="scientific_name"
@@ -357,8 +288,8 @@ export default function AddSpeciesDialog({ userId }: { userId: string }) {
                 }}
               />
               <div className="flex">
-                <Button type="submit" className="ml-1 mr-1 flex-auto">
-                  Add Species
+                <Button type="submit" className="ml-1 mr-1 flex-auto" disabled={loading}>
+                  {loading ? "Loading..." : "Edit Species"}
                 </Button>
                 <DialogClose asChild>
                   <Button type="button" className="ml-1 mr-1 flex-auto" variant="secondary">

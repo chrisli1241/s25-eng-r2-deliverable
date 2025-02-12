@@ -12,10 +12,20 @@ can cause errors with matching props and state in child components if the list o
 */
 import { Button } from "@/components/ui/button";
 import type { Database } from "@/lib/schema";
+//import { Dialog } from "@radix-ui/react-dialog";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DialogDescription } from "@radix-ui/react-dialog";
 import Image from "next/image";
+import { useState } from "react";
+import DeleteSpeciesDialog from "./delete-species-dialog";
+import EditSpeciesDialog from "./edit-species-info";
 type Species = Database["public"]["Tables"]["species"]["Row"];
 
-export default function SpeciesCard({ species }: { species: Species }) {
+export default function SpeciesCard({ species, userId }: { species: Species; userId: string }) {
+  const [open, setOpen] = useState<boolean>(false);
+
+  // Get session from Supabase
   return (
     <div className="m-4 w-72 min-w-72 flex-none rounded border-2 p-3 shadow">
       {species.image && (
@@ -27,7 +37,32 @@ export default function SpeciesCard({ species }: { species: Species }) {
       <h4 className="text-lg font-light italic">{species.common_name}</h4>
       <p>{species.description ? species.description.slice(0, 150).trim() + "..." : ""}</p>
       {/* Replace the button with the detailed view dialog. */}
-      <Button className="mt-3 w-full">Learn More</Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
+          <Button className="mt-3 w-full">Learn More</Button>
+        </DialogTrigger>
+        <DialogContent className="max-h-screen overflow-y-auto sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>{species.scientific_name}</DialogTitle>
+            <DialogDescription>Common Name: {species.common_name}</DialogDescription>
+          </DialogHeader>
+          <div>{species.description}</div>
+          <Accordion type="single" collapsible>
+            <AccordionItem value="item-1">
+              <AccordionTrigger>Species Data</AccordionTrigger>
+              <AccordionContent>
+                <ul>Scientific Name: {species.scientific_name}</ul>
+                <ul>Common Name: {species.common_name}</ul>
+                <ul>Total Population: {species.total_population}</ul>
+                <ul>Kingdom: {species.kingdom}</ul>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </DialogContent>
+      </Dialog>
+      <EditSpeciesDialog speciesId={species.id} />
+      {userId === species.author && <DeleteSpeciesDialog speciesId={species.id} />}
     </div>
   );
 }
